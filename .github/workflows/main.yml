@@ -9,48 +9,74 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Unzip project
         run: |
           rm -rf app_source
           mkdir -p app_source
+
           unzip -o CleanSplash-V1.zip -d app_source
 
-          echo "===== 解压后的项目文件 ====="
+          echo "解压后的文件："
           find app_source -maxdepth 4 -type f | head -100
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
       - name: Find Gradle project
         run: |
-          PROJECT_DIR=$(find app_source \
-            -type f \
-            \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
-            -print -quit | xargs -r dirname)
+          GRADLEW=$(find app_source -name gradlew -type f | head -1)
 
-          if [ -z "$PROJECT_DIR" ]; then
+          if [ -z "$GRADLEW" ]; then
             echo "找不到 Gradle 项目"
-            echo "请检查 ZIP 文件内容"
             exit 1
           fi
 
+          PROJECT_DIR=$(dirname "$GRADLEW")
+
           echo "找到 Gradle 项目：$PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "$PROJECT_DIR" > project_dir.txt
+
+          chmod +x "$GRADLEW"
+
+      - name: Fix Gradle version
+        run: |
+          PROJECT_DIR=$(cat project_dir.txt)
+
+          WRAPPER="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+          if [ ! -f "$WRAPPER" ]; then
+            echo "找不到 gradle-wrapper.properties"
+            echo "位置：$WRAPPER"
+            exit 1
+          fi
+
+          echo "Gradle Wrapper 文件：$WRAPPER"
+
+          sed -i 's#gradle-[0-9.]*-all\.zip#gradle-8.9-all.zip#g' "$WRAPPER"
+          sed -i 's#gradle-[0-9.]*-bin\.zip#gradle-8.9-bin.zip#g' "$WRAPPER"
+
+          echo "修改后的 Gradle 版本："
+          grep "distributionUrl" "$WRAPPER"
 
       - name: Build APK
         run: |
+          PROJECT_DIR=$(cat project_dir.txt)
+
           cd "$PROJECT_DIR"
-          gradle assembleDebug --stacktrace
+
+          chmod +x ./gradlew
+
+          echo "开始使用 Gradle 8.9 编译 APK..."
+
+          ./gradlew --version
+
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
